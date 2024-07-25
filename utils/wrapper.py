@@ -6,7 +6,10 @@ from typing import List, Literal, Optional, Union, Dict
 
 import numpy as np
 import torch
-from diffusers import AutoencoderTiny, StableDiffusionPipeline
+from diffusers import AutoencoderTiny
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline
+from diffusers.loaders.single_file import FromSingleFileMixin
+
 from PIL import Image
 
 from streamdiffusion import StreamDiffusion
@@ -16,6 +19,11 @@ from streamdiffusion.image_utils import postprocess_image
 torch.set_grad_enabled(False)
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
+
+
+class CustomDiffusionPipeline(DiffusionPipeline, FromSingleFileMixin):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
 
 class StreamDiffusionWrapper:
@@ -414,12 +422,12 @@ class StreamDiffusionWrapper:
         """
 
         try:  # Load from local directory
-            pipe: StableDiffusionPipeline = StableDiffusionPipeline.from_pretrained(
+            pipe: DiffusionPipeline = DiffusionPipeline.from_pretrained(
                 model_id_or_path,
             ).to(device=self.device, dtype=self.dtype)
 
         except ValueError:  # Load from huggingface
-            pipe: StableDiffusionPipeline = StableDiffusionPipeline.from_single_file(
+            pipe: DiffusionPipeline = CustomDiffusionPipeline.from_single_file(
                 model_id_or_path,
             ).to(device=self.device, dtype=self.dtype)
         except Exception:  # No model found
