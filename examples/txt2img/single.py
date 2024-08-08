@@ -7,7 +7,7 @@ import fire
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from utils.wrapper import StreamDiffusionWrapper
+from streamdiffusion.pipelines.stream_sd_pipeline import StreamSDPipeline
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -51,7 +51,7 @@ def main(
         The seed, by default 2. if -1, use random seed.
     """
 
-    stream = StreamDiffusionWrapper(
+    stream = StreamSDPipeline(
         model_id_or_path=model_id_or_path,
         lora_dict=lora_dict,
         t_index_list=[0, 16, 32, 45],

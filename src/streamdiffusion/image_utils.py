@@ -43,7 +43,7 @@ def postprocess_image(
     image: torch.Tensor,
     output_type: str = "pil",
     do_denormalize: Optional[List[bool]] = None,
-) -> Union[torch.Tensor, np.ndarray, PIL.Image.Image]:
+) -> Union[torch.Tensor, np.ndarray, PIL.Image.Image]: # type: ignore
     if not isinstance(image, torch.Tensor):
         raise ValueError(
             f"Input for postprocessing is in incorrect format: {type(image)}. We only support pytorch tensor"

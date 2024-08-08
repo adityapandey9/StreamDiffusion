@@ -4,7 +4,7 @@ from typing import List, Optional, Union, Any, Dict, Tuple, Literal
 import numpy as np
 import PIL.Image
 import torch
-from diffusers import LCMScheduler
+from diffusers.schedulers.scheduling_lcm import LCMScheduler
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 from diffusers.image_processor import VaeImageProcessor
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img import (
@@ -12,7 +12,11 @@ from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img impo
 )
 
 from streamdiffusion.image_filter import SimilarImageFilter
+from diffusers.loaders.single_file import FromSingleFileMixin
 
+class CustomDiffusionPipeline(DiffusionPipeline, FromSingleFileMixin):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
 class StreamDiffusion:
     def __init__(
@@ -133,7 +137,8 @@ class StreamDiffusion:
         seed: int = 2,
     ) -> None:
         self.generator = generator
-        self.generator.manual_seed(seed)
+        if self.generator is not None:
+            self.generator.manual_seed(seed)
         # initialize x_t_latent (it can be any random tensor)
         if self.denoising_steps_num > 1:
             self.x_t_latent_buffer = torch.zeros(
@@ -167,6 +172,9 @@ class StreamDiffusion:
             negative_prompt=negative_prompt,
         )
         self.prompt_embeds = encoder_output[0].repeat(self.batch_size, 1, 1)
+        
+        
+        self.use_embeded_prompt(encoder_output)
 
         if self.use_denoising_batch and self.cfg_type == "full":
             uncond_prompt_embeds = encoder_output[1].repeat(self.batch_size, 1, 1)
@@ -180,8 +188,8 @@ class StreamDiffusion:
                 [uncond_prompt_embeds, self.prompt_embeds], dim=0
             )
 
-        self.scheduler.set_timesteps(num_inference_steps, self.device)
-        self.timesteps = self.scheduler.timesteps.to(self.device)
+        self.scheduler.set_timesteps(num_inference_steps, self.device) # type: ignore
+        self.timesteps = self.scheduler.timesteps.to(self.device) # type: ignore
 
         # make sub timesteps list based on the indices in the t_list list and the values in the timesteps list
         self.sub_timesteps = []
@@ -207,7 +215,7 @@ class StreamDiffusion:
         c_skip_list = []
         c_out_list = []
         for timestep in self.sub_timesteps:
-            c_skip, c_out = self.scheduler.get_scalings_for_boundary_condition_discrete(
+            c_skip, c_out = self.scheduler.get_scalings_for_boundary_condition_discrete( # type: ignore
                 timestep
             )
             c_skip_list.append(c_skip)
@@ -227,8 +235,8 @@ class StreamDiffusion:
         alpha_prod_t_sqrt_list = []
         beta_prod_t_sqrt_list = []
         for timestep in self.sub_timesteps:
-            alpha_prod_t_sqrt = self.scheduler.alphas_cumprod[timestep].sqrt()
-            beta_prod_t_sqrt = (1 - self.scheduler.alphas_cumprod[timestep]).sqrt()
+            alpha_prod_t_sqrt = self.scheduler.alphas_cumprod[timestep].sqrt() # type: ignore
+            beta_prod_t_sqrt = (1 - self.scheduler.alphas_cumprod[timestep]).sqrt() # type: ignore
             alpha_prod_t_sqrt_list.append(alpha_prod_t_sqrt)
             beta_prod_t_sqrt_list.append(beta_prod_t_sqrt)
         alpha_prod_t_sqrt = (
@@ -295,6 +303,12 @@ class StreamDiffusion:
             )
 
         return denoised_batch
+    
+    def get_added_cond_kwargs(self):
+        return None
+    
+    def use_embeded_prompt(self, encoder_output: Any):
+        return None
 
     def unet_step(
         self,
@@ -304,17 +318,20 @@ class StreamDiffusion:
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         if self.guidance_scale > 1.0 and (self.cfg_type == "initialize"):
             x_t_latent_plus_uc = torch.concat([x_t_latent[0:1], x_t_latent], dim=0)
-            t_list = torch.concat([t_list[0:1], t_list], dim=0)
+            t_list = torch.concat([t_list[0:1], t_list], dim=0) # type: ignore
         elif self.guidance_scale > 1.0 and (self.cfg_type == "full"):
             x_t_latent_plus_uc = torch.concat([x_t_latent, x_t_latent], dim=0)
-            t_list = torch.concat([t_list, t_list], dim=0)
+            t_list = torch.concat([t_list, t_list], dim=0) # type: ignore
         else:
             x_t_latent_plus_uc = x_t_latent
+            
+        added_cond_kwargs = self.get_added_cond_kwargs()
 
         model_pred = self.unet(
             x_t_latent_plus_uc,
             t_list,
             encoder_hidden_states=self.prompt_embeds,
+            added_cond_kwargs=added_cond_kwargs,
             return_dict=False,
         )[0]
 
@@ -393,7 +410,7 @@ class StreamDiffusion:
         if self.use_denoising_batch:
             t_list = self.sub_timesteps_tensor
             if self.denoising_steps_num > 1:
-                x_t_latent = torch.cat((x_t_latent, prev_latent_batch), dim=0)
+                x_t_latent = torch.cat((x_t_latent, prev_latent_batch), dim=0) # type: ignore
                 self.stock_noise = torch.cat(
                     (self.init_noise[0:1], self.stock_noise[:-1]), dim=0
                 )
@@ -438,22 +455,22 @@ class StreamDiffusion:
         return x_0_pred_out
 
     @torch.no_grad()
-    def __call__(
-        self, x: Union[torch.Tensor, PIL.Image.Image, np.ndarray] = None
+    def output(
+        self, x: Union[torch.Tensor, PIL.Image.Image, np.ndarray] = None # type: ignore
     ) -> torch.Tensor:
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
-        start.record()
+        start.record() # type: ignore
         if x is not None:
             x = self.image_processor.preprocess(x, self.height, self.width).to(
                 device=self.device, dtype=self.dtype
             )
             if self.similar_image_filter:
-                x = self.similar_filter(x)
+                x = self.similar_filter(x) # type: ignore
                 if x is None:
                     time.sleep(self.inference_time_ema)
                     return self.prev_image_result
-            x_t_latent = self.encode_image(x)
+            x_t_latent = self.encode_image(x) # type: ignore
         else:
             # TODO: check the dimension of x_t_latent
             x_t_latent = torch.randn((1, 4, self.latent_height, self.latent_width)).to(
@@ -463,14 +480,14 @@ class StreamDiffusion:
         x_output = self.decode_image(x_0_pred_out).detach().clone()
 
         self.prev_image_result = x_output
-        end.record()
+        end.record() # type: ignore
         torch.cuda.synchronize()
         inference_time = start.elapsed_time(end) / 1000
         self.inference_time_ema = 0.9 * self.inference_time_ema + 0.1 * inference_time
         return x_output
 
     @torch.no_grad()
-    def txt2img(self, batch_size: int = 1) -> torch.Tensor:
+    def txt2img_stream(self, batch_size: int = 1) -> torch.Tensor:
         x_0_pred_out = self.predict_x0_batch(
             torch.randn((batch_size, 4, self.latent_height, self.latent_width)).to(
                 device=self.device, dtype=self.dtype
@@ -485,10 +502,13 @@ class StreamDiffusion:
             device=self.device,
             dtype=self.dtype,
         )
+        added_cond_kwargs = self.get_added_cond_kwargs()
+
         model_pred = self.unet(
             x_t_latent,
             self.sub_timesteps_tensor,
             encoder_hidden_states=self.prompt_embeds,
+            added_cond_kwargs=added_cond_kwargs,
             return_dict=False,
         )[0]
         x_0_pred_out = (
