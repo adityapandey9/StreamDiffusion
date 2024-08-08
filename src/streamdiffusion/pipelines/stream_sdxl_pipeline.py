@@ -688,7 +688,7 @@ class StreamSDXLPipeline(StreamDiffusion):
                     accelerate_with_stable_fast,
                 )
 
-                stream = accelerate_with_stable_fast(stream)
+                self = accelerate_with_stable_fast(self)
                 print("StableFast acceleration enabled.")
         except Exception:
             traceback.print_exc()
@@ -722,4 +722,4 @@ class StreamSDXLPipeline(StreamDiffusion):
             )
             self.nsfw_fallback_img = Image.new("RGB", (512, 512), (0, 0, 0))
 
-        return stream
+        return self
