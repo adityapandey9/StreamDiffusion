@@ -522,7 +522,7 @@ class StreamSDXLPipeline(StreamDiffusion):
                     device=pipe.device, dtype=pipe.dtype
                 )
             else:
-                self.vae = AutoencoderTiny.from_pretrained("madebyollin/sdxl-vae-fp16-fix", low_cpu_mem_usage=False, device_map=None).to( # type: ignore
+                self.vae = AutoencoderTiny.from_pretrained("madebyollin/taesdxl").to( # type: ignore
                     device=pipe.device, dtype=pipe.dtype
                 )
 
