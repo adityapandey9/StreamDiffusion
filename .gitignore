@@ -3,8 +3,11 @@
 .vscode/
 engines/
 output/
+tasks/
+inspire/
 *.csv
 *.mp4
+*.ipynb
 *.safetensors
 result_lcm.png
 model.ckpt

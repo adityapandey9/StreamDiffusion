@@ -323,41 +323,6 @@ class StreamSDXLPipeline(StreamDiffusion):
         else:
             return postprocess_image(image_tensor.cpu(), output_type=output_type)[0] # type: ignore
 
-    # ADD
-    def _get_add_time_ids(
-        self, original_size, crops_coords_top_left, target_size, dtype, text_encoder_projection_dim=None
-    ):
-        add_time_ids = list(original_size + crops_coords_top_left + target_size)
-
-        passed_add_embed_dim = (
-            self.unet.config.addition_time_embed_dim * len(add_time_ids) + text_encoder_projection_dim # type: ignore
-        )
-        expected_add_embed_dim = self.unet.add_embedding.linear_1.in_features # type: ignore
-
-        if expected_add_embed_dim != passed_add_embed_dim:
-            raise ValueError(
-                f"Model expects an added time embedding vector of length {expected_add_embed_dim}, but a vector of {passed_add_embed_dim} was created. The model has an incorrect config. Please check `unet.config.time_embedding_type` and `text_encoder_2.config.projection_dim`."
-            )
-
-        add_time_ids = torch.tensor([add_time_ids], dtype=dtype)
-        return add_time_ids
-    
-    def get_added_cond_kwargs(self):
-        return {"text_embeds": self.add_text_embeds.to(self.device), "time_ids": self.add_time_ids.to(self.device)}
-    
-    def use_embeded_prompt(self, encoder_output):
-        self.add_text_embeds = encoder_output[2]
-        original_size = (self.height, self.width)
-        crops_coords_top_left = (0, 0)
-        target_size = (self.height, self.width)
-        text_encoder_projection_dim = int(self.add_text_embeds.shape[-1])
-        self.add_time_ids = self._get_add_time_ids(
-            original_size,
-            crops_coords_top_left,
-            target_size,
-            dtype=encoder_output[0].dtype,
-            text_encoder_projection_dim=text_encoder_projection_dim,
-        )
 
     def _load_model(
         self,
@@ -439,66 +404,21 @@ class StreamSDXLPipeline(StreamDiffusion):
             print("Model load has failed. Doesn't exist.")
             exit()
 
-        # stream = StreamDiffusion(
-        #     pipe=pipe,
-        #     t_index_list=t_index_list,
-        #     torch_dtype=self.dtype,
-        #     width=self.width,
-        #     height=self.height,
-        #     do_add_noise=do_add_noise,
-        #     frame_buffer_size=self.frame_buffer_size,
-        #     use_denoising_batch=self.use_denoising_batch,
-        #     cfg_type=cfg_type,
-        # )
-        self.device = pipe.device
-        self.dtype = self.dtype
-        self.generator = None
-
-        self.height = self.height
-        self.width = self.width
-
-        self.latent_height = int(self.height // pipe.vae_scale_factor)
-        self.latent_width = int(self.width // pipe.vae_scale_factor)
-
-        self.frame_bff_size = self.frame_buffer_size
-        self.denoising_steps_num = len(t_index_list)
-
-        self.cfg_type = cfg_type
-
-        if self.use_denoising_batch:
-            self.batch_size = self.denoising_steps_num * self.frame_buffer_size
-            if self.cfg_type == "initialize":
-                self.trt_unet_batch_size = (
-                    self.denoising_steps_num + 1
-                ) * self.frame_bff_size
-            elif self.cfg_type == "full":
-                self.trt_unet_batch_size = (
-                    2 * self.denoising_steps_num * self.frame_bff_size
-                )
-            else:
-                self.trt_unet_batch_size = self.denoising_steps_num * self.frame_buffer_size
-        else:
-            self.trt_unet_batch_size = self.frame_bff_size
-            self.batch_size = self.frame_buffer_size
-
-        self.t_list = t_index_list
-
-        self.do_add_noise = do_add_noise
-        self.use_denoising_batch = self.use_denoising_batch
-
-        self.similar_image_filter = False
-        self.similar_filter = SimilarImageFilter()
-        self.prev_image_result = None
-
-        self.pipe = pipe
-        self.image_processor = VaeImageProcessor(pipe.vae_scale_factor)
-
-        self.scheduler = LCMScheduler.from_config(self.pipe.scheduler.config)
-        self.text_encoder = pipe.text_encoder
-        self.unet = pipe.unet
-        self.vae = pipe.vae
+        # Initialize the base StreamDiffusion class properly
+        super().__init__(
+            pipe=pipe,
+            t_index_list=t_index_list,
+            torch_dtype=self.dtype,
+            width=self.width,
+            height=self.height,
+            do_add_noise=do_add_noise,
+            frame_buffer_size=self.frame_buffer_size,
+            use_denoising_batch=self.use_denoising_batch,
+            cfg_type=cfg_type,
+        )
         
-        self.inference_time_ema = 0
+        # SDXL-specific: Add second text encoder
+        self.text_encoder_2 = pipe.text_encoder_2
         
         if not self.sd_turbo:
             if use_lcm_lora:

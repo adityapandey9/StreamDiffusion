@@ -403,66 +403,18 @@ class StreamSDPipeline(StreamDiffusion):
             print("Model load has failed. Doesn't exist.")
             exit()
 
-        # stream = StreamDiffusion(
-        #     pipe=pipe,
-        #     t_index_list=t_index_list,
-        #     torch_dtype=self.dtype,
-        #     width=self.width,
-        #     height=self.height,
-        #     do_add_noise=do_add_noise,
-        #     frame_buffer_size=self.frame_buffer_size,
-        #     use_denoising_batch=self.use_denoising_batch,
-        #     cfg_type=cfg_type,
-        # )
-        self.device = pipe.device
-        self.dtype = self.dtype
-        self.generator = None
-
-        self.height = self.height
-        self.width = self.width
-
-        self.latent_height = int(self.height // pipe.vae_scale_factor)
-        self.latent_width = int(self.width // pipe.vae_scale_factor)
-
-        self.frame_bff_size = self.frame_buffer_size
-        self.denoising_steps_num = len(t_index_list)
-
-        self.cfg_type = cfg_type
-
-        if self.use_denoising_batch:
-            self.batch_size = self.denoising_steps_num * self.frame_buffer_size
-            if self.cfg_type == "initialize":
-                self.trt_unet_batch_size = (
-                    self.denoising_steps_num + 1
-                ) * self.frame_bff_size
-            elif self.cfg_type == "full":
-                self.trt_unet_batch_size = (
-                    2 * self.denoising_steps_num * self.frame_bff_size
-                )
-            else:
-                self.trt_unet_batch_size = self.denoising_steps_num * self.frame_buffer_size
-        else:
-            self.trt_unet_batch_size = self.frame_bff_size
-            self.batch_size = self.frame_buffer_size
-
-        self.t_list = t_index_list
-
-        self.do_add_noise = do_add_noise
-        self.use_denoising_batch = self.use_denoising_batch
-
-        self.similar_image_filter = False
-        self.similar_filter = SimilarImageFilter()
-        self.prev_image_result = None
-
-        self.pipe = pipe
-        self.image_processor = VaeImageProcessor(pipe.vae_scale_factor)
-
-        self.scheduler = LCMScheduler.from_config(self.pipe.scheduler.config)
-        self.text_encoder = pipe.text_encoder
-        self.unet = pipe.unet
-        self.vae = pipe.vae
-
-        self.inference_time_ema = 0
+        # Initialize the base StreamDiffusion class properly
+        super().__init__(
+            pipe=pipe,
+            t_index_list=t_index_list,
+            torch_dtype=self.dtype,
+            width=self.width,
+            height=self.height,
+            do_add_noise=do_add_noise,
+            frame_buffer_size=self.frame_buffer_size,
+            use_denoising_batch=self.use_denoising_batch,
+            cfg_type=cfg_type,
+        )
         
         if not self.sd_turbo:
             if use_lcm_lora:

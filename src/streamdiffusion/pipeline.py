@@ -305,10 +305,45 @@ class StreamDiffusion:
         return denoised_batch
     
     def get_added_cond_kwargs(self):
+        if hasattr(self, 'add_text_embeds') and hasattr(self, 'add_time_ids'):
+            return {"text_embeds": self.add_text_embeds.to(self.device), "time_ids": self.add_time_ids.to(self.device)}
         return None
     
     def use_embeded_prompt(self, encoder_output: Any):
-        return None
+        if len(encoder_output) >= 4:
+            self.add_text_embeds = encoder_output[2]
+            self._setup_sdxl_conditioning(encoder_output)
+    
+    def _setup_sdxl_conditioning(self, encoder_output):
+        if hasattr(self, 'height') and hasattr(self, 'width'):
+            original_size = (self.height, self.width)
+            crops_coords_top_left = (0, 0)
+            target_size = (self.height, self.width)
+            text_encoder_projection_dim = int(self.add_text_embeds.shape[-1])
+            self.add_time_ids = self._get_add_time_ids(
+                original_size,
+                crops_coords_top_left,
+                target_size,
+                dtype=encoder_output[0].dtype,
+                text_encoder_projection_dim=text_encoder_projection_dim,
+            )
+    
+    def _get_add_time_ids(self, original_size, crops_coords_top_left, target_size, dtype, text_encoder_projection_dim=None):
+        add_time_ids = list(original_size + crops_coords_top_left + target_size)
+
+        if hasattr(self, 'unet') and hasattr(self.unet, 'config'):
+            passed_add_embed_dim = (
+                self.unet.config.addition_time_embed_dim * len(add_time_ids) + text_encoder_projection_dim
+            )
+            expected_add_embed_dim = self.unet.add_embedding.linear_1.in_features
+
+            if expected_add_embed_dim != passed_add_embed_dim:
+                raise ValueError(
+                    f"Model expects an added time embedding vector of length {expected_add_embed_dim}, but a vector of {passed_add_embed_dim} was created. The model has an incorrect config. Please check `unet.config.time_embedding_type` and `text_encoder_2.config.projection_dim`."
+                )
+
+        add_time_ids = torch.tensor([add_time_ids], dtype=dtype)
+        return add_time_ids
 
     def unet_step(
         self,
